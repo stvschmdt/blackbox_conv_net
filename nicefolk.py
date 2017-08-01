@@ -38,27 +38,27 @@ def deepnn(x):
   """
   # Reshape to use within a convolutional neural net.
   # Last dimension is for "features" - there is only one here, since images are
-  # grayscale -- it would be 3 for an RGB image, 4 for RGBA, etc.
+  # grayscale -- it would be 3 for an RGB image
   x_image = tf.reshape(x, [-1, 28, 28, 1])
 
-  # First convolutional layer - maps one grayscale image to 32 feature maps.
+  # First convolutional layer - maps one grayscale image to feature maps.
   W_conv1 = weight_variable([5, 5, 1, 32])
   b_conv1 = bias_variable([32])
   h_conv1 = tf.nn.relu(conv2d(x_image, W_conv1) + b_conv1)
 
-  # Pooling layer - downsamples by 2X.
+  # Pooling layer - downsamples by 2x.
   h_pool1 = max_pool_2x2(h_conv1)
 
-  # Second convolutional layer -- maps 32 feature maps to 64.
+  # Second convolutional layer -- maps 32 feature maps to 64
   W_conv2 = weight_variable([5, 5, 32, 64])
   b_conv2 = bias_variable([64])
   h_conv2 = tf.nn.relu(conv2d(h_pool1, W_conv2) + b_conv2)
 
-  # Second pooling layer.
+  # Second pooling layer
   h_pool2 = max_pool_2x2(h_conv2)
 
   # Fully connected layer 1 -- after 2 round of downsampling, our 28x28 image
-  # is down to 7x7x64 feature maps -- maps this to 1024 features.
+  # is down to 7x7x64 feature maps -- maps this to 1024 features
   W_fc1 = weight_variable([7 * 7 * 64, 1024])
   b_fc1 = bias_variable([1024])
 
@@ -167,6 +167,7 @@ def image_list_to_np(l_image, idx):
 
 #split data arrays with images and labels into train/test set
 def split_train_data(xarr, yarr, n):
+  n = int(n)
   train_images = np.array(xarr[:-n])
   train_labels = np.array(yarr[:-n])
   test_images =  np.array(xarr[-n:])
@@ -228,7 +229,7 @@ def main(_):
     # TODO create batching loop
     for i in range(FLAGS.iters):
       #sanity check on accuracy should be going down -> necessary but not sufficient
-      if i % 100 == 0:
+      if i % int((FLAGS.iters/5)) == 0:
         train_accuracy = accuracy.eval(feed_dict={x: train_images, y_: train_labels, keep_prob: 1.0})
         logger.info('step %d, training accuracy %g' % (i, train_accuracy))
       #update rule - softmax vector obtained for checking
