@@ -1,4 +1,4 @@
-# blackbox_convolutional_net
+# blackbox_convolutional_net: researching adversarial adjustments to classifiers
 
 [usage] running the program from cli example
 python nicefolk.py --augments 10 --iters 30 --split 400
