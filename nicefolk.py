@@ -335,7 +335,7 @@ def main(_):
     adv_pic1_real = adv_real_image[winners[rando]].reshape((28,28))
     true_pic = mdl.pictrue
     false_pic = mdl.picfalse
-    labels = ['ORIGINAL MODEL CORRECT CLASSIFICATION %s' %( mdl.pictruelabel[0]), 'ORIGINAL MODEL MISCLASSIFIED UNTAMPERED %s AS %s'% (mdl.picfalselabel[0], mdl.picfalselabel[1]), 'ORIGINAL IMAGE %s' % (adv_real[winners[0]]), 'ATTACKED ORIGINAL MODEL %s w %f DELTA'%(adv_pred[winners[0]], change_list[winners[0]]),'ORIGINAL IMAGE %s' % (adv_real[winners[rando]]), 'ATTACKED ORIGINAL MODEL %s w %f DELTA' % (adv_pred[winners[rando]], change_list[winners[rando]]) ]
+    labels = ['ORIGINAL MODEL CORRECT CLASSIFICATION %s' %( mdl.pictruelabel[0]), 'ORIGINAL MODEL MISCLASSIFIED UNTAMPERED %s AS %s'% (mdl.picfalselabel[0], mdl.picfalselabel[1]), 'ORIGINAL IMAGE %s' % (adv_real[winners[0]]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA'%(adv_pred[winners[0]], change_list[winners[0]]),'ORIGINAL IMAGE %s' % (adv_real[winners[rando]]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA' % (adv_pred[winners[rando]], change_list[winners[rando]]) ]
     logger.info('total program run time: %f' %(time.time()-start_t))
     if not FLAGS.nograph:
       graphics([true_pic, false_pic, adv_pic0_real, adv_pic0, adv_pic1_real, adv_pic1], labels)
