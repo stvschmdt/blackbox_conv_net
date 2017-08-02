@@ -256,6 +256,7 @@ def main(_):
     logger.info('attack model train time: %f' %(time.time()-train_t))
     pert_t = time.time()
     adv_list = []
+    change_list = []
     for idx,pos in enumerate(true_pred):
       for epsilon in np.linspace(0.025,.25,num=FLAGS.augments):
           xp = goodfellow_mod(np.array(pos[0]), jacobian[0][idx], epsilon)
@@ -278,6 +279,7 @@ def main(_):
               #plt.imshow(img1)
               #print(pos[1], np.argmax(yprime), pred_vals, epsilon, np.sum(xp), np.sum(pos[0]), np.sum(xprime))
               #plt.show()
+              change_list.append(np.fabs((np.sum(pos[0])-np.sum(xprime)))/np.sum(pos[0]))
               adv_list.append((xprime, np.argmax(yprime), pred_vals, epsilon, pos[0]))
               #logger.results('YES adversary accuracy: %g %f' % (acc, epsilon))
               break
@@ -311,6 +313,7 @@ def main(_):
     adv_ = tf.argmax(mdl.y,1)
     adv_pred = mdl.sess.run(adv_, feed_dict={mdl.x: adv_images})
     winners = []
+    deltas = []
     epsilon_tracker = collections.defaultdict(int)
     for idx, (a, l, r) in enumerate(zip(adv_pred, adv_labels, adv_real)):
         #print( a, l, r, a == r)
@@ -323,6 +326,7 @@ def main(_):
     logger.results('black box adversarial attack transferability: %g' % (1 - sess.run(mdl.accuracy, feed_dict={mdl.x: adv_images,mdl.y_: adv_labels})))
     for d,v in sorted(epsilon_tracker.items()):
         logger.results('epsilon %s %s' % (d,v))
+    logger.info('average pixelation mod: %f' %(np.mean(change_list)))
     # grab first two success stories and show them -> lets assume two or error handle later
     adv_pic0 = adv_images[winners[0]].reshape((28,28))
     adv_pic0_real = adv_real_image[winners[0]].reshape((28,28))
@@ -331,7 +335,7 @@ def main(_):
     adv_pic1_real = adv_real_image[winners[rando]].reshape((28,28))
     true_pic = mdl.pictrue
     false_pic = mdl.picfalse
-    labels = ['ORIGINAL NEURAL NET CORRECT ON THIS %s' %( mdl.pictruelabel[0]), 'ORIGINAL NEURAL NET THOUGHT UNTAMPERED %s WAS %s'% (mdl.picfalselabel[1], mdl.picfalselabel[0]), 'ORIGINAL IMAGE %s' % (adv_real[winners[0]]), 'ORIGINAL NET THOUGHT %s'%(adv_pred[winners[0]]),'ORIGINAL IMAGE %s' % (adv_real[winners[rando]]), 'ORIGINAL NET THOUGHT %s' % (adv_pred[winners[rando]]) ]
+    labels = ['ORIGINAL MODEL CORRECT CLASSIFICATION %s' %( mdl.pictruelabel[0]), 'ORIGINAL MODEL MISCLASSIFIED UNTAMPERED %s AS %s'% (mdl.picfalselabel[0], mdl.picfalselabel[1]), 'ORIGINAL IMAGE %s' % (adv_real[winners[0]]), 'ATTACKED ORIGINAL MODEL %s w %f DELTA'%(adv_pred[winners[0]], change_list[winners[0]]),'ORIGINAL IMAGE %s' % (adv_real[winners[rando]]), 'ATTACKED ORIGINAL MODEL %s w %f DELTA' % (adv_pred[winners[rando]], change_list[winners[rando]]) ]
     logger.info('total program run time: %f' %(time.time()-start_t))
     if not FLAGS.nograph:
       graphics([true_pic, false_pic, adv_pic0_real, adv_pic0, adv_pic1_real, adv_pic1], labels)
