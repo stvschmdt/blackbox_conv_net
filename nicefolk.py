@@ -344,14 +344,15 @@ def main(_):
         logger.results('epsilon %s %s' % (d,v))
     logger.info('average pixelation mod: %f' %(np.mean(change_list)))
     # grab first two success stories and show them -> lets assume two or error handle later
-    adv_pic0 = adv_images[winners[0]].reshape((28,28))
-    adv_pic0_real = adv_real_images[winners[0]].reshape((28,28))
     rando = random.randint(1,(len(winners)-1))
-    adv_pic1 = adv_images[winners[rando]].reshape((28,28))
-    adv_pic1_real = adv_real_images[winners[rando]].reshape((28,28))
+    adv_pic0 = adv_images[winners[rando]].reshape((28,28))
+    adv_pic0_real = adv_real_images[winners[rando]].reshape((28,28))
+    min_eps = np.argmin(adv_epsilon)
+    adv_pic1 = adv_images[winners[min_eps]].reshape((28,28))
+    adv_pic1_real = adv_real_images[winners[min_eps]].reshape((28,28))
     true_pic = mdl.pictrue
     false_pic = mdl.picfalse
-    labels = ['ORIGINAL MODEL CORRECT CLASSIFICATION %s' %( mdl.pictruelabel[0]), 'ORIGINAL MODEL MISCLASSIFIED UNTAMPERED %s AS %s'% (mdl.picfalselabel[0], mdl.picfalselabel[1]), 'ORIGINAL IMAGE %s' % (adv_real[winners[0]]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA'%(adv_pred[winners[0]], change_list[winners[0]][1]),'ORIGINAL IMAGE %s' % (adv_real[winners[rando]]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA' % (adv_pred[winners[rando]], change_list[winners[rando]][1]) ]
+    labels = ['ORIGINAL MODEL CORRECT CLASSIFICATION %s' %( mdl.pictruelabel[0]), 'ORIGINAL MODEL MISCLASSIFIED UNTAMPERED %s AS %s'% (mdl.picfalselabel[0], mdl.picfalselabel[1]), 'ORIGINAL IMAGE %s' % (adv_real[winners[min_eps]]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA'%(adv_pred[winners[rando]], change_list[winners[rando]][1]),'ORIGINAL IMAGE %s' % (adv_real[winners[min_eps]]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA' % (adv_pred[winners[min_eps]], change_list[winners[min_eps]][1]) ]
     logger.info('total program run time: %f' %(time.time()-start_t))
     if not FLAGS.nograph:
       graphics([true_pic, false_pic, adv_pic0_real, adv_pic0, adv_pic1_real, adv_pic1], labels)
