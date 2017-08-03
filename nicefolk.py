@@ -186,14 +186,16 @@ def main(_):
       return
   logger.info('obtained black box training data')
   logger.info('oracle data capture time: %f' %(time.time()-start_t))
+  
   mnist = mdl.oracle
   prep_t = time.time()
   with tf.device('/cpu:0'):
       # translate into tensorflow style nparrays
       x_vals = image_list_to_np(mnist, 0)
+      # save the true values for comparison later
       true_vals = image_list_to_np(mnist,2)
       
-      # yvals converted to one hot vector
+      # yvals converted to one hot vector - y vals are the predicted values, what we want to model
       y_vals = [ x[1] for x in mnist ]
       y_vals = [ one_hot(i) for i in y_vals]
       y_vals = np.array(y_vals)
@@ -228,16 +230,17 @@ def main(_):
     sess.run(tf.global_variables_initializer())
     # TODO create batching loop
     for i in range(FLAGS.iters):
+      #update rule - softmax vector obtained for checking
+      trainer, softmax = sess.run([train_step, cross_entropy],feed_dict={x: train_images, y_: train_labels, keep_prob: 0.5})
       #sanity check on accuracy should be going down -> necessary but not sufficient
       if i % int((FLAGS.iters/5)) == 0:
         train_accuracy = accuracy.eval(feed_dict={x: train_images, y_: train_labels, keep_prob: 1.0})
         logger.info('step %d, training accuracy %g' % (i, train_accuracy))
-      #update rule - softmax vector obtained for checking
-      trainer, softmax = sess.run([train_step, cross_entropy],feed_dict={x: train_images, y_: train_labels, keep_prob: 0.5})
     logger.info('adversarial model has been trained')
     # snag the gradient vector wrt X inputs
     grads = tf.gradients(cross_entropy, [x])
     jacobian = sess.run(grads, feed_dict={x:test_images, y_:test_labels, keep_prob: 1.0})
+    
     #use test data as input for perturbations
     #test_ = tf.argmax(y_,1)
     #test_vals = test_.eval(feed_dict={y_:test_labels})
@@ -247,10 +250,13 @@ def main(_):
         #print(ver, test_vals)
     pred_ = tf.argmax(y_conv,1)
     #vify = tf.argmax(y_,1)
-    pred_vals = pred_.eval(feed_dict={x:test_images, y_:test_labels, keep_prob:1.0})
     #vify_vals = vify.eval(feed_dict={x:test_images, y_:test_labels, keep_prob:1.0})
+    
+    # grab the predicted values from the trained A` model
+    pred_vals = pred_.eval(feed_dict={x:test_images, y_:test_labels, keep_prob:1.0})
+    # for the images the A` model correctly classified - these become our attack bed
     true_pred = [ (pxl, p) for pxl, p, r in zip(test_images, pred_vals, verify) if p==r ]
-    logger.info('true positive test exemplars: %f' %(len(true_pred)))
+    logger.info('correctly classified test iamges: %5f' %(len(true_pred)))
     logger.results('adversary accuracy: %g' % (accuracy.eval(feed_dict={x: test_images, y_: test_labels, keep_prob: 1.0})))
     #setup the goodfellow attack iterations
     logger.info('attack model train time: %f' %(time.time()-train_t))
@@ -258,14 +264,14 @@ def main(_):
     adv_list = []
     change_list = []
     for idx,pos in enumerate(true_pred):
-      for epsilon in np.linspace(0.025,.25,num=FLAGS.augments):
+      for epsilon in np.linspace(0.01,.20,num=FLAGS.augments):
           xp = goodfellow_mod(np.array(pos[0]), jacobian[0][idx], epsilon)
           prime_label = one_hot(int(pos[1]))
           xprime = np.array(xp).reshape((1,784))
           #xprime = xprime.reshape((1,784))
           yprime = np.array(prime_label).reshape((1,10))
           #yprime = yprime.reshape((1, 10))
-          pred_vals = pred_.eval(feed_dict={x: xprime, y_: yprime, keep_prob:1.0})
+          pred_vals = pred_.eval(feed_dict={x: xprime, keep_prob:1.0})
           acc = accuracy.eval(feed_dict={x: xprime, y_: yprime, keep_prob: 1.0})
           #corr = sess.run(mdl.y, feed_dict={x:xprime})
           if acc < 1.0:
@@ -279,66 +285,81 @@ def main(_):
               #plt.imshow(img1)
               #print(pos[1], np.argmax(yprime), pred_vals, epsilon, np.sum(xp), np.sum(pos[0]), np.sum(xprime))
               #plt.show()
-              change_list.append(np.fabs((np.sum(pos[0])-np.sum(xprime)))/np.sum(pos[0]))
+              change_list.append((np.fabs(np.sum(pos[0])-np.sum(xprime)),np.fabs((np.sum(pos[0])-np.sum(xprime)))/np.sum(pos[0])))
+              # adv_list = [ attack_image, real_label, pred_label, epsilon, orig_image ]
               adv_list.append((xprime, np.argmax(yprime), pred_vals, epsilon, pos[0]))
               #logger.results('YES adversary accuracy: %g %f' % (acc, epsilon))
               break
         #can do this each iteration - or as a whole...at this point timing doesnt matter, but will
-    logger.results('true positive adversary count: %f' % (float(len(adv_list))/float(len(true_pred))))
+    logger.results('candidate adversary image figures: %5f %f' % (len(adv_list), float(len(adv_list))/float(len(true_pred))))
 
     logger.info('distortion vector time: %f' %(time.time()-pert_t))
     att_t = time.time()
     # save model to file
     cnn_saver_path = cnn_saver.save(sess, 'cnn_saver.ckpt')
     
-    # at this point adv_list is a tuple (x modifed image, y label, true label, epsilon found) 
+    # at this point adv_list is a tuple (x modifed image, y label true, predicted label, epsilon found) 
     adv_images = [ a[0] for a in adv_list ]
     l = len(adv_list)
     adv_images = np.array(adv_images).reshape((l,784))
-    #adv_images = adv_images.reshape((l, 784))
-    adv_labels = [ a[1] for a in adv_list ]
+    #adv_images = adv_images.reshape((l, 784)) -> wrongly classifed y's
+    adv_labels = [ a[2] for a in adv_list ]
     adv_labels = [ one_hot(int(v)) for v in adv_labels ]
     adv_labels = np.array(adv_labels).reshape((l,10))
 
-    adv_real = [ a[2] for a in adv_list ]
+    # correct y value
+    adv_real = [ a[1] for a in adv_list ]
     adv_real = np.array(adv_real)
     #adv_labels = adv_labels.reshape((l,10))
     adv_epsilon = [ a[3] for a in adv_list ]
     adv_epsilon = np.array(adv_epsilon)
 
-    adv_real_image = [ a[4] for a in adv_list ]
+    adv_real_images = [ a[4] for a in adv_list ]
 
     # test for transferability
-    adv_real = mdl.sess.run(tf.argmax(adv_labels,1))
+    #transfer_real = mdl.sess.run(tf.argmax(adv_real,1))
     adv_ = tf.argmax(mdl.y,1)
     adv_pred = mdl.sess.run(adv_, feed_dict={mdl.x: adv_images})
+    adv_orig = mdl.sess.run(adv_, feed_dict={mdl.x: adv_real_images})
     winners = []
     deltas = []
+    still_wrong = 0
     epsilon_tracker = collections.defaultdict(int)
-    for idx, (a, l, r) in enumerate(zip(adv_pred, adv_labels, adv_real)):
+    for idx, (a, l, r, o) in enumerate(zip(adv_pred, adv_labels, adv_real, adv_orig)):
         #print( a, l, r, a == r)
-        if a != r:
+        if a != r and o == r:
             #logger.info('found adversarial example: %g %g' % (a, r))
             winners.append(idx)
             epsilon_tracker[adv_epsilon[idx]] += 1
+        elif a == r or o != r:
+            still_wrong += 1
     logger.info('attack results time: %f' %(time.time()-att_t))
     logger.info('****************** results **************')
-    logger.results('black box adversarial attack transferability: %g' % (1 - sess.run(mdl.accuracy, feed_dict={mdl.x: adv_images,mdl.y_: adv_labels})))
+    logger.info('number of total attacks: %d' %(len(adv_list)))
+    logger.info('number of unidentified attacks: %d' %(still_wrong))
+    logger.info('number of successful attacks: %d' %(len(winners)))
+    logger.info('black box transferability: %f'%( len(winners)/len(adv_list)))
+    #logger.results('black box adversarial attack transferability: %g' % (1 - sess.run(mdl.accuracy, feed_dict={mdl.x: adv_images,mdl.y_: np.array( [ one_hot(int(b)) for b in adv_real ]).reshape((len(adv_real),10))})))
     for d,v in sorted(epsilon_tracker.items()):
         logger.results('epsilon %s %s' % (d,v))
     logger.info('average pixelation mod: %f' %(np.mean(change_list)))
     # grab first two success stories and show them -> lets assume two or error handle later
     adv_pic0 = adv_images[winners[0]].reshape((28,28))
-    adv_pic0_real = adv_real_image[winners[0]].reshape((28,28))
+    adv_pic0_real = adv_real_images[winners[0]].reshape((28,28))
     rando = random.randint(1,(len(winners)-1))
     adv_pic1 = adv_images[winners[rando]].reshape((28,28))
-    adv_pic1_real = adv_real_image[winners[rando]].reshape((28,28))
+    adv_pic1_real = adv_real_images[winners[rando]].reshape((28,28))
     true_pic = mdl.pictrue
     false_pic = mdl.picfalse
-    labels = ['ORIGINAL MODEL CORRECT CLASSIFICATION %s' %( mdl.pictruelabel[0]), 'ORIGINAL MODEL MISCLASSIFIED UNTAMPERED %s AS %s'% (mdl.picfalselabel[0], mdl.picfalselabel[1]), 'ORIGINAL IMAGE %s' % (adv_real[winners[0]]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA'%(adv_pred[winners[0]], change_list[winners[0]]),'ORIGINAL IMAGE %s' % (adv_real[winners[rando]]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA' % (adv_pred[winners[rando]], change_list[winners[rando]]) ]
+    labels = ['ORIGINAL MODEL CORRECT CLASSIFICATION %s' %( mdl.pictruelabel[0]), 'ORIGINAL MODEL MISCLASSIFIED UNTAMPERED %s AS %s'% (mdl.picfalselabel[0], mdl.picfalselabel[1]), 'ORIGINAL IMAGE %s' % (adv_real[winners[0]]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA'%(adv_pred[winners[0]], change_list[winners[0]][1]),'ORIGINAL IMAGE %s' % (adv_real[winners[rando]]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA' % (adv_pred[winners[rando]], change_list[winners[rando]][1]) ]
     logger.info('total program run time: %f' %(time.time()-start_t))
     if not FLAGS.nograph:
       graphics([true_pic, false_pic, adv_pic0_real, adv_pic0, adv_pic1_real, adv_pic1], labels)
+      #plt.hist(np.transpose(jacobian[0]),bins='auto')
+      #plt.show()
+      #plt.hist(jacobian[0][0],bins='auto')
+      #plt.show()
+    #print(sorted(change_list))
 
     
 

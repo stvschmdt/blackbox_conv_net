@@ -53,13 +53,13 @@ class BlackBox(object):
       # So here we use tf.nn.softmax_cross_entropy_with_logits on the raw
       # outputs of 'y', and then average across the batch.
       cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.y_, logits=self.y))
-      train_step = tf.train.GradientDescentOptimizer(0.5).minimize(cross_entropy)
+      train_step = tf.train.GradientDescentOptimizer(0.3).minimize(cross_entropy)
       simple_saver = tf.train.Saver()
       self.sess = tf.InteractiveSession()
       tf.global_variables_initializer().run()
       # Train
       logger.info('simple nn model accuracy training...')
-      for _ in range(1000):
+      for _ in range(5000):
         self.batch_xs, self.batch_ys = self.mnist.train.next_batch(100)
         self.sess.run(train_step, feed_dict={self.x: self.batch_xs, self.y_: self.batch_ys})
 
