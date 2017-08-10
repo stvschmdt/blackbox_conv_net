@@ -367,8 +367,8 @@ def main(_):
     adv_pic1_real = adv_real_images[min_eps].reshape((28,28))
     true_pic = mdl.pictrue
     false_pic = mdl.picfalse
-    print(false_pic)
-    print(winners, rando, min_eps)
+    #print(false_pic)
+    #print(winners, rando, min_eps)
     labels = ['ORIGINAL MODEL CORRECT CLASSIFICATION %s' %( mdl.pictruelabel[0]), 'ORIGINAL MODEL MISCLASSIFIED UNTAMPERED %s AS %s'% (mdl.picfalselabel[1], mdl.picfalselabel[0]), 'ORIGINAL IMAGE %s' % (adv_real[rando]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA'%(adv_pred[rando], change_list[rando]),'ORIGINAL IMAGE %s' % (adv_real[min_eps]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA' % (adv_pred[min_eps], change_list[min_eps]) ]
     logger.info('total program run time: %f' %(time.time()-start_t))
     if not FLAGS.nograph:
