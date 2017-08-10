@@ -81,9 +81,9 @@ class BlackBox(object):
       self.true_positives = [ ex for ex in self.oracle if ex[1] == ex[2] ]
       self.true_negatives = [ ex for ex in self.oracle if ex[1] != ex[2] ]
       self.psample = random.choice(self.true_positives)
-      self.nsample = random.choice(self.true_negatives)
       self.pictruelabel = (self.psample[1], self.psample[2])
       self.pictrue = self.psample[0].reshape((28,28))
+      self.nsample = random.choice(self.true_negatives)
       self.picfalselabel = (self.nsample[1], self.nsample[2])
       self.picfalse = self.nsample[0].reshape((28,28))
       #if GRAPH:
