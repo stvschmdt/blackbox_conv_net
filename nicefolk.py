@@ -130,24 +130,24 @@ def graphics(images, labels):
     plt.imshow(images[0])
     
     plt.subplot(322)
-    plt.imshow(images[1])
     plt.xlabel(labels[1], labelpad=2)
+    plt.imshow(images[1])
     
     plt.subplot(323)
-    plt.imshow(images[2])
     plt.xlabel(labels[2],labelpad=2)
+    plt.imshow(images[2])
 
     plt.subplot(324)
-    plt.imshow(images[3])
     plt.xlabel(labels[3], labelpad=2)
+    plt.imshow(images[3])
     
     plt.subplot(325)
-    plt.imshow(images[4])
     plt.xlabel(labels[4], labelpad=2)
+    plt.imshow(images[4])
     
     plt.subplot(326)
-    plt.imshow(images[5])
     plt.xlabel(labels[5], labelpad=2)
+    plt.imshow(images[5])
 
     plt.show()
 
@@ -156,7 +156,25 @@ def goodfellow_mod(x, grad, epsilon=0.05):
     xprime =  x + np.sign(grad)*epsilon
     #dumb way to keep within 0,1, empirical testing will determine keeping
     xprime[ xprime < 0.0] = 0
-    xprime[ xprime > 1.0] = 0
+    xprime[ xprime > 1.0] = 1.0
+    return xprime
+
+def schmidt_mod(x, grad, max_delta=.10):
+    xprime = x.copy()
+    # add values from non-zero image pixels
+    sum_pixels = np.sum(x)
+    pct_allowed = max_delta * sum_pixels
+    # add values of gradient where image is non-zero
+    sum_denominator = np.sum([np.fabs(g[1]) for g in zip(x,grad) if g[0] != 0.0])
+    # iterate through x, grad - scale grad where x != 0 and apply sign
+    for idx, pix in enumerate(zip(x, grad)):
+        if pix[0] > 0.0:
+            # distribution applied to gradient then to original x val
+            scale = (pix[1] /sum_denominator) * pct_allowed
+            # only process non-zero values
+            xprime[idx] = scale * pix[0]
+    xprime[ xprime < 0.0] = 0
+    xprime[ xprime > 1.0] = 1.0
     return xprime
 
 #convert a list of tuples into nparray
@@ -242,15 +260,8 @@ def main(_):
     jacobian = sess.run(grads, feed_dict={x:test_images, y_:test_labels, keep_prob: 1.0})
     
     #use test data as input for perturbations
-    #test_ = tf.argmax(y_,1)
-    #test_vals = test_.eval(feed_dict={y_:test_labels})
-    # use this...
     verify = sess.run(tf.argmax(test_labels, 1))
-    #for ver in zip(verify, test_vals):
-        #print(ver, test_vals)
     pred_ = tf.argmax(y_conv,1)
-    #vify = tf.argmax(y_,1)
-    #vify_vals = vify.eval(feed_dict={x:test_images, y_:test_labels, keep_prob:1.0})
     
     # grab the predicted values from the trained A` model
     pred_vals = pred_.eval(feed_dict={x:test_images, y_:test_labels, keep_prob:1.0})
@@ -260,12 +271,17 @@ def main(_):
     logger.results('adversary accuracy: %g' % (accuracy.eval(feed_dict={x: test_images, y_: test_labels, keep_prob: 1.0})))
     #setup the goodfellow attack iterations
     logger.info('attack model train time: %f' %(time.time()-train_t))
+    
     pert_t = time.time()
     adv_list = []
     change_list = []
     for idx,pos in enumerate(true_pred):
-      for epsilon in np.linspace(0.01,.20,num=FLAGS.augments):
-          xp = goodfellow_mod(np.array(pos[0]), jacobian[0][idx], epsilon)
+      for epsilon in np.linspace(0.005,.15,num=FLAGS.augments):
+          if not FLAGS.schmidt:
+            xp = goodfellow_mod(np.array(pos[0]), jacobian[0][idx], epsilon)
+          else:
+            nonzero = np.sum(pos[0])
+            xp = schmidt_mod(np.array(pos[0]), jacobian[0][idx], nonzero*epsilon)
           prime_label = one_hot(int(pos[1]))
           xprime = np.array(xp).reshape((1,784))
           #xprime = xprime.reshape((1,784))
@@ -303,14 +319,13 @@ def main(_):
     adv_images = [ a[0] for a in adv_list ]
     l = len(adv_list)
     adv_images = np.array(adv_images).reshape((l,784))
+    # correct y value
+    adv_real = [ a[1] for a in adv_list ]
+    adv_real = np.array(adv_real)
     #adv_images = adv_images.reshape((l, 784)) -> wrongly classifed y's
     adv_labels = [ a[2] for a in adv_list ]
     adv_labels = [ one_hot(int(v)) for v in adv_labels ]
     adv_labels = np.array(adv_labels).reshape((l,10))
-
-    # correct y value
-    adv_real = [ a[1] for a in adv_list ]
-    adv_real = np.array(adv_real)
     #adv_labels = adv_labels.reshape((l,10))
     adv_epsilon = [ a[3] for a in adv_list ]
     adv_epsilon = np.array(adv_epsilon)
@@ -327,9 +342,8 @@ def main(_):
     still_wrong = 0
     epsilon_tracker = collections.defaultdict(int)
     for idx, (a, l, r, o) in enumerate(zip(adv_pred, adv_labels, adv_real, adv_orig)):
-        #print( a, l, r, a == r)
         if a != r and o == r:
-            #logger.info('found adversarial example: %g %g' % (a, r))
+            logger.info('found adversarial example: %g %g %g %g' % (a, np.argmax(l), r, o))
             winners.append(idx)
             epsilon_tracker[adv_epsilon[idx]] += 1
         elif a == r or o != r:
@@ -345,15 +359,17 @@ def main(_):
         logger.results('epsilon %s %s' % (d,v))
     logger.info('average pixelation mod: %f' %(np.mean(change_list)))
     # grab first two success stories and show them -> lets assume two or error handle later
-    rando = random.randint(1,(len(winners)-1))
-    adv_pic0 = adv_images[winners[rando]].reshape((28,28))
-    adv_pic0_real = adv_real_images[winners[rando]].reshape((28,28))
+    rando = random.choice(winners)
+    adv_pic0 = adv_images[rando].reshape((28,28))
+    adv_pic0_real = adv_real_images[rando].reshape((28,28))
     min_eps = np.argmin(adv_epsilon)
-    adv_pic1 = adv_images[winners[min_eps]].reshape((28,28))
-    adv_pic1_real = adv_real_images[winners[min_eps]].reshape((28,28))
+    adv_pic1 = adv_images[min_eps].reshape((28,28))
+    adv_pic1_real = adv_real_images[min_eps].reshape((28,28))
     true_pic = mdl.pictrue
     false_pic = mdl.picfalse
-    labels = ['ORIGINAL MODEL CORRECT CLASSIFICATION %s' %( mdl.pictruelabel[0]), 'ORIGINAL MODEL MISCLASSIFIED UNTAMPERED %s AS %s'% (mdl.picfalselabel[0], mdl.picfalselabel[1]), 'ORIGINAL IMAGE %s' % (adv_real[winners[min_eps]]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA'%(adv_pred[winners[rando]], change_list[winners[rando]]),'ORIGINAL IMAGE %s' % (adv_real[winners[min_eps]]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA' % (adv_pred[winners[min_eps]], change_list[winners[min_eps]]) ]
+    print(false_pic)
+    print(winners, rando, min_eps)
+    labels = ['ORIGINAL MODEL CORRECT CLASSIFICATION %s' %( mdl.pictruelabel[0]), 'ORIGINAL MODEL MISCLASSIFIED UNTAMPERED %s AS %s'% (mdl.picfalselabel[1], mdl.picfalselabel[0]), 'ORIGINAL IMAGE %s' % (adv_real[rando]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA'%(adv_pred[rando], change_list[rando]),'ORIGINAL IMAGE %s' % (adv_real[min_eps]), 'ATTACKED ORIGINAL MODEL %s w %.2f DELTA' % (adv_pred[min_eps], change_list[min_eps]) ]
     logger.info('total program run time: %f' %(time.time()-start_t))
     if not FLAGS.nograph:
       graphics([true_pic, false_pic, adv_pic0_real, adv_pic0, adv_pic1_real, adv_pic1], labels)
@@ -376,6 +392,7 @@ if __name__ == '__main__':
   parser.add_argument('--split', type=float,default=200,help='train test set percent split')
   parser.add_argument('--fsplit', type=float,default=None,help='train test set percent split')
   parser.add_argument('--nograph', action='store_true',help='turn graphics off')
+  parser.add_argument('--schmidt', action='store_true',help='use schmidt modification')
   FLAGS, unparsed = parser.parse_known_args()
   #logger.info('FLAGS set: %g'%(FLAGS))
   tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
