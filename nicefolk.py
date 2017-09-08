@@ -161,18 +161,19 @@ def goodfellow_mod(x, grad, epsilon=0.05):
 
 def schmidt_mod(x, grad, max_delta=.10):
     xprime = x.copy()
-    # add values from non-zero image pixels
+    # add values from image pixels
     sum_pixels = np.sum(x)
-    pct_allowed = max_delta * sum_pixels
+    delta_allowed = max_delta * sum_pixels
     # add values of gradient where image is non-zero
-    sum_denominator = np.sum([np.fabs(g[1]) for g in zip(x,grad) if g[0] != 0.0])
+    sum_denominator = np.sum((np.fabs(g) for g in grad ))
     # iterate through x, grad - scale grad where x != 0 and apply sign
     for idx, pix in enumerate(zip(x, grad)):
         if pix[0] > 0.0:
             # distribution applied to gradient then to original x val
-            scale = (pix[1] /sum_denominator) * pct_allowed
+            #scale = (pix[1] /sum_denominator) * pct_allowed
             # only process non-zero values
-            xprime[idx] = scale * pix[0]
+            #xprime[idx] = scale * pix[0]
+            xprime[idx] = pix[0] +  delta_allowed * (pix[1] / sum_denominator)
     xprime[ xprime < 0.0] = 0
     xprime[ xprime > 1.0] = 1.0
     return xprime
@@ -291,21 +292,17 @@ def main(_):
           acc = accuracy.eval(feed_dict={x: xprime, y_: yprime, keep_prob: 1.0})
           #corr = sess.run(mdl.y, feed_dict={x:xprime})
           if acc < 1.0:
-              #plt.figure(1)
-              #plt.subplot(121)
-              #img = pos[0].reshape((28,28))
-              #plt.imshow(img)
-             
-              #plt.subplot(122)
-              #img1 = xp.reshape((28,28))
-              #plt.imshow(img1)
               #print(pos[1], np.argmax(yprime), pred_vals, epsilon, np.sum(xp), np.sum(pos[0]), np.sum(xprime))
-              #plt.show()
               #change_list.append((np.fabs(np.sum(pos[0])-np.sum(xprime)),np.fabs((np.sum(pos[0])-np.sum(xprime)))/np.sum(pos[0])))
+              diff = np.subtract(np.array(pos[0]), xprime)
+              summ = np.sum(np.array(pos[0]))
+              fabss = [np.fabs(d) for d in diff]
+              mod_diff = np.sum(fabss) / summ
               change_list.append(np.fabs((np.sum(pos[0])-np.sum(xprime)))/np.sum(pos[0]))
               # adv_list = [ attack_image, real_label, pred_label, epsilon, orig_image ]
-              adv_list.append((xprime, np.argmax(yprime), pred_vals, epsilon, pos[0]))
-              #logger.results('YES adversary accuracy: %g %f' % (acc, epsilon))
+              #adv_list.append((xprime, np.argmax(yprime), pred_vals, mod_diff, pos[0]))
+              adv_list.append((xprime, pos[1], pred_vals, mod_diff, pos[0]))
+              #logger.results('DISTORTION adversary accuracy: %f %f %f' % ( np.argmax(yprime), pos[1],mod_diff))
               break
         #can do this each iteration - or as a whole...at this point timing doesnt matter, but will
     logger.results('candidate adversary image figures: %5f %f' % (len(adv_list), float(len(adv_list))/float(len(true_pred))))
@@ -322,28 +319,28 @@ def main(_):
     # correct y value
     adv_real = [ a[1] for a in adv_list ]
     adv_real = np.array(adv_real)
-    #adv_images = adv_images.reshape((l, 784)) -> wrongly classifed y's
-    adv_labels = [ a[2] for a in adv_list ]
-    adv_labels = [ one_hot(int(v)) for v in adv_labels ]
-    adv_labels = np.array(adv_labels).reshape((l,10))
-    #adv_labels = adv_labels.reshape((l,10))
+    #wrongly predictedy's values
+    adv_wrong = [ a[2] for a in adv_list ]
+    #adv_wrong = [ one_hot(int(v)) for v in adv_wrong ]
+    #adv_wrong = np.array(adv_wrong).reshape((l,10))
+    #adv_wrong = adv_wrong.reshape((l,10))
     adv_epsilon = [ a[3] for a in adv_list ]
     adv_epsilon = np.array(adv_epsilon)
 
-    adv_real_images = [ a[4] for a in adv_list ]
+    real_images = [ a[4] for a in adv_list ]
 
     # test for transferability
     #transfer_real = mdl.sess.run(tf.argmax(adv_real,1))
     adv_ = tf.argmax(mdl.y,1)
     adv_pred = mdl.sess.run(adv_, feed_dict={mdl.x: adv_images})
-    adv_orig = mdl.sess.run(adv_, feed_dict={mdl.x: adv_real_images})
+    adv_orig = mdl.sess.run(adv_, feed_dict={mdl.x: real_images})
     winners = []
     deltas = []
     still_wrong = 0
     epsilon_tracker = collections.defaultdict(int)
-    for idx, (a, l, r, o) in enumerate(zip(adv_pred, adv_labels, adv_real, adv_orig)):
-        if a != r and o == r:
-            logger.info('found adversarial example: %g %g %g %g' % (a, np.argmax(l), r, o))
+    for idx, (a, l, r, o) in enumerate(zip(adv_pred, adv_wrong, adv_real, adv_orig)):
+        if a != r and a == l and o == r:
+            logger.info('found adversarial example: %g %g %g %g' % (a, l, r, o))
             winners.append(idx)
             epsilon_tracker[adv_epsilon[idx]] += 1
         elif a == r or o != r:
@@ -361,10 +358,10 @@ def main(_):
     # grab first two success stories and show them -> lets assume two or error handle later
     rando = random.choice(winners)
     adv_pic0 = adv_images[rando].reshape((28,28))
-    adv_pic0_real = adv_real_images[rando].reshape((28,28))
-    min_eps = np.argmin(adv_epsilon)
+    adv_pic0_real = real_images[rando].reshape((28,28))
+    min_eps = random.choice(winners)
     adv_pic1 = adv_images[min_eps].reshape((28,28))
-    adv_pic1_real = adv_real_images[min_eps].reshape((28,28))
+    adv_pic1_real = real_images[min_eps].reshape((28,28))
     true_pic = mdl.pictrue
     false_pic = mdl.picfalse
     #print(false_pic)
